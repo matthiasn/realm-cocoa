@@ -1944,6 +1944,7 @@
 - (void)testSortAndFilterSubscriptions {
     RLMRealm *realm = [self partialRealmWithName:_cmd];
 
+    NSDate *now = NSDate.date;
     [self waitForKeyPath:@"state" object:[[PartialSyncObjectA allObjectsInRealm:realm] subscribeWithName:@"query 1"]
                    value:@(RLMSyncSubscriptionStateComplete)];
     [self waitForKeyPath:@"state" object:[[PartialSyncObjectA allObjectsInRealm:realm] subscribeWithName:@"query 2"]
@@ -1960,6 +1961,11 @@
     XCTAssertEqualObjects(@"query 1", ([subscriptions objectsWhere:@"name = %@", @"query 1"].firstObject.name));
     XCTAssertEqual(3U, ([subscriptions objectsWhere:@"status = %@", @(RLMSyncSubscriptionStateComplete)].count));
     XCTAssertEqual(1U, ([subscriptions objectsWhere:@"status = %@", @(RLMSyncSubscriptionStateError)].count));
+
+    XCTAssertEqual(4U, ([subscriptions objectsWhere:@"createdAt >= %@", now]).count);
+    XCTAssertEqual(0U, ([subscriptions objectsWhere:@"createdAt < %@", now]).count);
+    XCTAssertEqual(4U, [subscriptions objectsWhere:@"expiresAt = nil"].count);
+    XCTAssertEqual(4U, [subscriptions objectsWhere:@"timeToLive = nil"].count);
 
     XCTAssertThrows([subscriptions sortedResultsUsingKeyPath:@"name" ascending:NO]);
     XCTAssertThrows([subscriptions sortedResultsUsingDescriptors:@[]]);

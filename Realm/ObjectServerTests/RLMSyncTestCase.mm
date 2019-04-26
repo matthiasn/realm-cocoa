@@ -46,7 +46,7 @@ static NSString *nodePath() {
         if (NSString *path = environment[@"REALM_NODE_PATH"]) {
             return path;
         }
-        return @"/usr/local/bin/node";
+        return @"/Users/tgoyne/.nvm/versions/node/v8.15.0/bin/node";
     }();
     return path;
 }

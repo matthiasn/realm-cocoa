@@ -909,6 +909,15 @@ public class SyncSubscription<T: RealmCollectionValue>: RealmCollectionValue {
     /// The state of the subscription.
     public var state: SyncSubscriptionState { return SyncSubscriptionState(rlmSubscription) }
 
+    public var query: String { return rlmSubscription.query }
+    public var createdAt: Date? { return rlmSubscription.createdAt }
+    public var updatedAt: Date? { return rlmSubscription.updatedAt }
+    public var expiresAt: Date? { return rlmSubscription.expiresAt }
+    public var timeToLive: TimeInterval? {
+        let ttl = rlmSubscription.timeToLive
+        return ttl.isNaN ? nil : ttl
+    }
+
     internal init(_ rlmSubscription: RLMSyncSubscription) {
         self.rlmSubscription = rlmSubscription
     }
@@ -916,9 +925,6 @@ public class SyncSubscription<T: RealmCollectionValue>: RealmCollectionValue {
     public static func == (lhs: SyncSubscription, rhs: SyncSubscription) -> Bool {
         return lhs.rlmSubscription == rhs.rlmSubscription
     }
-
-// Partial sync subscriptions are only observable in Swift 3.2 and newer.
-#if swift(>=3.2)
 
     /// Observe the subscription for state changes.
     ///
@@ -943,8 +949,6 @@ public class SyncSubscription<T: RealmCollectionValue>: RealmCollectionValue {
         }
         return KeyValueObservationNotificationToken(observation)
     }
-
-#endif // Swift >= 3.2
 
     /// Remove this subscription
     ///
@@ -983,6 +987,8 @@ extension Results {
     /// subscription. If the limit is larger than the number of objects which
     /// match the query, all objects will be included.
     ///
+    /// By default, subscriptions do not pull in objects which *link to* the subscribed objects (only objects which the subscribed objects link to). This means that LinkingObjects properties will only report the objects which happen to be included by some other subscription.
+    ///
     /// Creating a subscription is an asynchronous operation and the newly
     /// created subscription will not be reported by Realm.subscriptions() until
     /// it has transitioned from the `.creating` state to `.pending`,
@@ -991,14 +997,20 @@ extension Results {
     /// - parameter subscriptionName: An optional name for the subscription.
     /// - parameter limit: The maximum number of objects to include in the subscription.
     /// - returns: The subscription.
-    public func subscribe(named subscriptionName: String? = nil, limit: Int? = nil) -> SyncSubscription<Element> {
+    public func subscribe(named subscriptionName: String? = nil, limit: Int? = nil,
+                          update: Bool = false, timeToLive: TimeInterval? = nil,
+                          includingLinkingObjects: [String] = []) -> SyncSubscription<Element> {
+        let options = RLMSyncSubscriptionOptions()
+        options.name = subscriptionName
+        options.overwriteExisting = update
         if let limit = limit {
-            return SyncSubscription(rlmResults.subscribe(withName: subscriptionName, limit: UInt(limit)))
+            options.limit = UInt(limit)
         }
-        if let name = subscriptionName {
-            return SyncSubscription(rlmResults.subscribe(withName: name))
+        if let timeToLive = timeToLive {
+            options.timeToLive = timeToLive
         }
-        return SyncSubscription(rlmResults.subscribe())
+        options.includeLinkingObjectProperties = includingLinkingObjects
+        return SyncSubscription(rlmResults.subscribe(with: options))
     }
 }
 

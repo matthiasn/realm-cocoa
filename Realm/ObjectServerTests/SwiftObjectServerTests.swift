@@ -98,7 +98,6 @@ class SwiftObjectServerTests: SwiftSyncTestCase {
         }
     }
 
-#if swift(>=3.2)
     func testConnectionState() {
         let user = try! synchronouslyLogInUser(for: basicCredentials(register: true), server: authURL)
         let realm = try! synchronouslyOpenRealm(url: realmURL, user: user)
@@ -124,7 +123,6 @@ class SwiftObjectServerTests: SwiftSyncTestCase {
         wait(forState: .connecting)
         wait(forState: .connected)
     }
-#endif // Swift >= 3.2
 
     // MARK: - Client reset
 
@@ -526,6 +524,15 @@ class SwiftObjectServerTests: SwiftSyncTestCase {
                           "\(object.number) == 6 || \(object.number) >= 8")
             XCTAssertEqual(object.string, "partial")
         }
+
+        waitForState(results2.subscribe(named: "query2", limit: 1, update: true), .complete)
+        XCTAssertEqual(results2.count, 2)
+        XCTAssertEqual(realm.objects(SwiftPartialSyncObjectA.self).count, 2)
+        for object in results2 {
+            XCTAssertTrue(object.number == 6 || object.number == 9,
+                          "\(object.number) == 6 || \(object.number) == 9")
+            XCTAssertEqual(object.string, "partial")
+        }
     }
 
     func testPartialSyncSubscriptions() {
@@ -556,8 +563,98 @@ class SwiftObjectServerTests: SwiftSyncTestCase {
         XCTAssertNil(realm.subscription(named: "not query"))
     }
 
-// Partial sync subscriptions are only available in Swift 3.2 and newer.
-#if swift(>=3.2)
+    func testSubscriptionPropertyUpdating() {
+        let credentials = SyncCredentials.usernamePassword(username: #function, password: "a", register: true)
+        let user = try! synchronouslyLogInUser(for: credentials, server: authURL)
+        let realm = try! synchronouslyOpenRealm(configuration: user.configuration())
+
+        // Create the initial subscription
+        let objects = realm.objects(SwiftPartialSyncObjectA.self)
+        let sub1 = objects.filter("number > 5").subscribe(named: "query")
+        XCTAssertEqual(sub1.name, "query")
+        XCTAssertEqual(sub1.query, "")
+        XCTAssertNotNil(sub1.createdAt)
+        XCTAssertNotNil(sub1.updatedAt)
+        XCTAssertEqual(sub1.createdAt, sub1.updatedAt)
+        XCTAssertNil(sub1.expiresAt)
+        XCTAssertNil(sub1.timeToLive)
+        let createdAt = sub1.createdAt!
+
+        // Verify that all of the properties are correct on both the returned
+        // subscription object and the one fetched from the Realm
+        waitForState(sub1, .complete)
+        XCTAssertEqual(sub1.name, "query")
+        XCTAssertEqual(sub1.query, "number > 5")
+        XCTAssertNotNil(sub1.createdAt)
+        XCTAssertNotNil(sub1.updatedAt)
+        XCTAssertEqual(sub1.createdAt, sub1.updatedAt)
+        XCTAssertGreaterThan(sub1.createdAt!, createdAt)
+        XCTAssertNil(sub1.expiresAt)
+        XCTAssertNil(sub1.timeToLive)
+
+        let sub2 = realm.subscriptions().first!
+        XCTAssertEqual(sub2.name, "query")
+        XCTAssertEqual(sub2.query, "number > 5")
+        XCTAssertNotNil(sub2.createdAt)
+        XCTAssertNotNil(sub2.updatedAt)
+        XCTAssertEqual(sub2.createdAt, sub2.updatedAt)
+        XCTAssertGreaterThan(sub2.createdAt!, createdAt)
+        XCTAssertNil(sub2.expiresAt)
+        XCTAssertNil(sub2.timeToLive)
+
+        // Update query and verify that propagates
+        waitForState(objects.filter("number > 6").subscribe(named: "query", update: true),
+                     .complete)
+        XCTAssertEqual(sub1.name, "query")
+        XCTAssertEqual(sub1.query, "number > 6")
+        XCTAssertNotNil(sub1.createdAt)
+        XCTAssertNotNil(sub1.updatedAt)
+        XCTAssertGreaterThan(sub1.updatedAt!, sub1.createdAt!)
+        XCTAssertNil(sub1.expiresAt)
+        XCTAssertNil(sub1.timeToLive)
+
+        XCTAssertEqual(sub2.name, "query")
+        XCTAssertEqual(sub2.query, "number > 6")
+        XCTAssertNotNil(sub2.createdAt)
+        XCTAssertNotNil(sub2.updatedAt)
+        XCTAssertGreaterThan(sub2.updatedAt!, sub2.createdAt!)
+        XCTAssertNil(sub2.expiresAt)
+        XCTAssertNil(sub2.timeToLive)
+
+        // Update TTL and verify that propagates
+        waitForState(objects.filter("number > 6").subscribe(named: "query", update: true, timeToLive: 10.0),
+                     .complete)
+        XCTAssertEqual(sub1.name, "query")
+        XCTAssertEqual(sub1.query, "number > 6")
+        XCTAssertNotNil(sub1.createdAt)
+        XCTAssertNotNil(sub1.updatedAt)
+        XCTAssertGreaterThan(sub1.updatedAt!, sub1.createdAt!)
+        XCTAssertEqual(sub1.updatedAt!.addingTimeInterval(10.0), sub1.expiresAt!)
+        XCTAssertEqual(sub1.timeToLive, 10.0)
+
+        XCTAssertEqual(sub2.name, "query")
+        XCTAssertEqual(sub2.query, "number > 6")
+        XCTAssertNotNil(sub2.createdAt)
+        XCTAssertNotNil(sub2.updatedAt)
+        XCTAssertGreaterThan(sub2.updatedAt!, sub2.createdAt!)
+        XCTAssertEqual(sub2.updatedAt!.addingTimeInterval(10.0), sub2.expiresAt!)
+        XCTAssertEqual(sub2.timeToLive, 10.0)
+    }
+
+    func testQuerySubscriptions() {
+        let credentials = SyncCredentials.usernamePassword(username: #function, password: "a", register: true)
+        let user = try! synchronouslyLogInUser(for: credentials, server: authURL)
+        let realm = try! synchronouslyOpenRealm(configuration: user.configuration())
+
+        let _ = realm.subscriptions().filter("name = 'a'")
+        let _ = realm.subscriptions().filter("query = 'a'")
+        let _ = realm.subscriptions().filter("createdAt > %@", Date())
+        let _ = realm.subscriptions().filter("updatedAt > %@", Date())
+        let _ = realm.subscriptions().filter("expiresAt > %@", Date())
+        let _ = realm.subscriptions().filter("timeToLive = 5")
+//        let _ = realm.subscriptions().filter("state = %@", SyncSubscriptionState.complete)
+    }
+
     func waitForState<T>(_ subscription: SyncSubscription<T>, _ desiredState: SyncSubscriptionState) {
         let ex = expectation(description: "Waiting for state \(desiredState)")
         let token = subscription.observe(\.state, options: .initial) { state in
@@ -579,27 +676,6 @@ class SwiftObjectServerTests: SwiftSyncTestCase {
         waitForExpectations(timeout: 20.0)
         token.invalidate()
     }
-#else
-    func waitForState<T>(_ subscription: SyncSubscription<T>, _ desiredState: SyncSubscriptionState) {
-        for _ in 0..<20 {
-            if subscription.state == desiredState {
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
-        }
-        XCTFail("waitForState(\(subscription), \(desiredState)) timed out")
-    }
-
-    func waitForError<T>(_ subscription: SyncSubscription<T>) {
-        for _ in 0..<20 {
-            if case .error(_) = subscription.state {
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
-        }
-        XCTFail("waitForError(\(subscription)) timed out")
-    }
-#endif // Swift >= 3.2
 
     // MARK: - Certificate Pinning
 
